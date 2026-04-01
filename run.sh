@@ -24,7 +24,7 @@ fi
 mkdir -p "$DATA_DIR"
 
 # Question bank - support both local and GitHub
-KB_REPO="https://raw.githubusercontent.com/jrrqd/osnk-question-bank/main"
+KB_REPO="https://raw.githubusercontent.com/jrrqd/osnk-question-bank/master"
 
 get_kb_file() {
     local file="$1"
