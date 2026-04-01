@@ -6,7 +6,10 @@
 COMMAND="$1"
 shift
 
-# Dynamic path detection with GitHub fallback
+# Get script directory for skill-embedded question bank
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Dynamic path detection with local fallback (skill folder + workspace)
 if [ -n "$OPENCLAW_WORKSPACE" ]; then
     DATA_DIR="$OPENCLAW_WORKSPACE/memory"
     KB_DIR="$OPENCLAW_WORKSPACE/knowledge"
@@ -23,13 +26,18 @@ fi
 
 mkdir -p "$DATA_DIR"
 
-# Question bank - support both local and GitHub
+# Question bank sources (priority: local > skill folder > GitHub fallback)
 KB_REPO="https://raw.githubusercontent.com/jrrqd/osnk-question-bank/master"
 
 get_kb_file() {
     local file="$1"
+    # 1. Check workspace knowledge folder
     if [ -f "$KB_DIR/$file" ]; then
         cat "$KB_DIR/$file"
+    # 2. Check skill folder (embedded)
+    elif [ -f "$SCRIPT_DIR/$file" ]; then
+        cat "$SCRIPT_DIR/$file"
+    # 3. Fallback to GitHub
     else
         curl -s "$KB_REPO/$file" 2>/dev/null || echo ""
     fi
@@ -51,24 +59,29 @@ get_random_question() {
     category="$2"
     
     if [ -z "$year" ]; then
-        # Get random files from OSK/OSNK
+        # Get random files from local or skill folder
         local files=$(find "$KB_DIR" -name "osk-*.md" -o -name "osnk-*.md" 2>/dev/null | shuf | head -3)
         if [ -z "$files" ]; then
-            # Try GitHub
+            files=$(find "$SCRIPT_DIR" -maxdepth 1 -name "osk-*.md" -o -name "osnk-*.md" 2>/dev/null | shuf | head -3)
+        fi
+        if [ -z "$files" ]; then
             files="osk-2018.md osk-2019.md osnk-2024.md"
         fi
         for f in $files; do
-            if [ -f "$KB_DIR/$f" ]; then
-                grep -A10 "^## " "$KB_DIR/$f" | head -20 || echo "No questions found"
+            if [ -f "$f" ]; then
+                grep -A10 "^## " "$f" | head -20 || echo "No questions found"
             fi
         done
     else
         if [ -f "$KB_DIR/osk-$year.md" ]; then
             shuf -n 1 "$KB_DIR/osk-$year.md" | head -15
+        elif [ -f "$SCRIPT_DIR/osk-$year.md" ]; then
+            shuf -n 1 "$SCRIPT_DIR/osk-$year.md" | head -15
         elif [ -f "$KB_DIR/osnk-$year.md" ]; then
             shuf -n 1 "$KB_DIR/osnk-$year.md" | head -15
+        elif [ -f "$SCRIPT_DIR/osnk-$year.md" ]; then
+            shuf -n 1 "$SCRIPT_DIR/osnk-$year.md" | head -15
         else
-            # Try download from GitHub
             curl -s "$KB_REPO/osk-$year.md" | head -15 || echo "Year $year not found"
         fi
     fi
@@ -111,7 +124,7 @@ show_help() {
     echo "  openclaw, show my stats"
     echo "  openclaw, my progress"
     echo ""
-    echo "📚 Bank soal dari: github.com/jrrqd/osnk-question-bank"
+    echo "📚 Included: 700+ questions OSK/OSNK (2006-2025)"
 }
 
 case "$COMMAND" in
