@@ -6,27 +6,39 @@
 COMMAND="$1"
 shift
 
-# Dynamic path detection
+# Dynamic path detection with GitHub fallback
 if [ -n "$OPENCLAW_WORKSPACE" ]; then
     DATA_DIR="$OPENCLAW_WORKSPACE/memory"
     KB_DIR="$OPENCLAW_WORKSPACE/knowledge"
+    REPO_DIR="$OPENCLAW_WORKSPACE"
 elif [ -d "/root/.openclaw/workspace/memory" ]; then
     DATA_DIR="/root/.openclaw/workspace/memory"
     KB_DIR="/root/.openclaw/workspace/knowledge"
+    REPO_DIR="/root/.openclaw/workspace"
 else
     DATA_DIR="./memory"
     KB_DIR="./knowledge"
+    REPO_DIR="."
 fi
 
 mkdir -p "$DATA_DIR"
+
+# Question bank - support both local and GitHub
+KB_REPO="https://raw.githubusercontent.com/jrrqd/osnk-question-bank/main"
+
+get_kb_file() {
+    local file="$1"
+    if [ -f "$KB_DIR/$file" ]; then
+        cat "$KB_DIR/$file"
+    else
+        curl -s "$KB_REPO/$file" 2>/dev/null || echo ""
+    fi
+}
 
 # Files
 STATS_FILE="$DATA_DIR/osnk-stats.json"
 PROGRESS_FILE="$DATA_DIR/osnk-progress.json"
 CONFIG_FILE="$DATA_DIR/osnk-config.json"
-
-# Question bank path
-# KB_DIR set above
 
 init_stats() {
     if [ ! -f "$STATS_FILE" ]; then
@@ -39,10 +51,16 @@ get_random_question() {
     category="$2"
     
     if [ -z "$year" ]; then
-        # Get random file
-        local files=$(find "$KB_DIR" -name "osk-*.md" -o -name "osnk-*.md" | shuf | head -3)
+        # Get random files from OSK/OSNK
+        local files=$(find "$KB_DIR" -name "osk-*.md" -o -name "osnk-*.md" 2>/dev/null | shuf | head -3)
+        if [ -z "$files" ]; then
+            # Try GitHub
+            files="osk-2018.md osk-2019.md osnk-2024.md"
+        fi
         for f in $files; do
-            grep -A10 "^## " "$f" | head -20 || echo "No questions found"
+            if [ -f "$KB_DIR/$f" ]; then
+                grep -A10 "^## " "$KB_DIR/$f" | head -20 || echo "No questions found"
+            fi
         done
     else
         if [ -f "$KB_DIR/osk-$year.md" ]; then
@@ -50,62 +68,50 @@ get_random_question() {
         elif [ -f "$KB_DIR/osnk-$year.md" ]; then
             shuf -n 1 "$KB_DIR/osnk-$year.md" | head -15
         else
-            echo "Year $year not found in question bank"
+            # Try download from GitHub
+            curl -s "$KB_REPO/osk-$year.md" | head -15 || echo "Year $year not found"
         fi
     fi
 }
 
 show_stats() {
     init_stats
-    local total=$(cat "$STATS_FILE" | grep -o '"total_attempted":[0-9]*' | cut -d: -f2)
-    local correct=$(cat "$STATS_FILE" | grep -o '"correct":[0-9]*' | cut -d: -f2)
-    local wrong=$(cat "$STATS_FILE" | grep -o '"wrong":[0-9]*' | cut -d: -f2)
-    local sessions=$(cat "$STATS_FILE" | grep -o '"sessions":[0-9]*' | cut -d: -f2)
+    total=$(cat "$STATS_FILE" 2>/dev/null | grep -o '"total_attempted":[0-9]*' | cut -d: -f2)
+    correct=$(cat "$STATS_FILE" 2>/dev/null | grep -o '"correct":[0-9]*' | cut -d: -f2)
+    wrong=$(cat "$STATS_FILE" 2>/dev/null | grep -o '"wrong":[0-9]*' | cut -d: -f2)
     
     if [ -z "$total" ] || [ "$total" = "0" ]; then
-        echo "📊 Your OSNK Training Stats"
+        echo "📊 OSNK Training Stats"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "No training sessions yet!"
+        echo "Belum ada sesi latihan!"
         echo ""
-        echo "Start training: openclaw, give me 5 questions"
+        echo "Mulai: openclaw, give me 5 questions"
     else
-        local accuracy=$((correct * 100 / total))
-        echo "📊 Your OSNK Training Stats"
+        accuracy=$((correct * 100 / total))
+        echo "📊 OSNK Training Stats"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "📝 Total Questions: $total"
-        echo "✅ Correct: $correct"
-        echo "❌ Wrong: $wrong"
+        echo "📝 Total: $total | ✅ $correct | ❌ $wrong"
         echo "📈 Accuracy: $accuracy%"
-        echo "🎯 Sessions: $sessions"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     fi
 }
 
 show_help() {
-    echo "🧠 OSNK Trainer - Olympic CS Training"
+    echo "🧠 OSNK Trainer - Latihan OSNK Informatika"
     echo ""
-    echo "📝 Practice Questions:"
+    echo "📝 Contoh perintah:"
     echo "  openclaw, give me 5 questions"
-    echo "  openclaw, 10 graph theory questions"
-    echo "  openclaw, random OSK 2018 questions"
+    echo "  openclaw, 10 graph questions"
+    echo "  openclaw, random osk 2018"
     echo ""
     echo "⏱️ Speed Run:"
     echo "  openclaw, start speed run 30 minutes"
-    echo "  openclaw, 20 min speed run"
     echo ""
-    echo "📊 Performance:"
+    echo "📊 Stats:"
     echo "  openclaw, show my stats"
     echo "  openclaw, my progress"
-    echo "  openclaw, weak areas"
     echo ""
-    echo "🎓 Mentoring:"
-    echo "  openclaw, explain dynamic programming"
-    echo "  openclaw, what is BFS?"
-    echo "  openclaw, hint for question 3"
-    echo ""
-    echo "📚 Categories:"
-    echo "  DP, Graph, Combinatorics, Number Theory"
-    echo "  Boolean Algebra, Algorithm Analysis, Data Structures"
+    echo "📚 Bank soal dari: github.com/jrrqd/osnk-question-bank"
 }
 
 case "$COMMAND" in
@@ -117,7 +123,7 @@ case "$COMMAND" in
         num="${1:-5}"
         topic="$*"
         
-        echo "🎯 Here's your $num random questions:"
+        echo "🎯 $num random questions:"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         for i in $(seq 1 $num); do
             echo ""
@@ -125,18 +131,13 @@ case "$COMMAND" in
             get_random_question "" "" | head -8
         done
         echo ""
-        echo "Type: openclaw, check answer [question] [your_answer]"
+        echo "Ketik: openclaw, answer [your_answer]"
         ;;
         
     "speed"|"speedrun"|"timed")
-        local duration="${1:-30}"
-        echo "⏱️ Speed Run Started!"
+        duration="${1:-30}"
+        echo "⏱️ Speed Run - $duration menit!"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "Duration: $duration minutes"
-        echo "Target: Answer as many as possible"
-        echo "Scoring: +4 correct, -1 wrong"
-        echo ""
-        echo "Ready? Answer these questions:"
         get_random_question "" "" | head -10
         ;;
         
@@ -144,40 +145,18 @@ case "$COMMAND" in
         topic="$*"
         case "$topic" in
             *dynamic*|*dp*)
-                echo "📖 Dynamic Programming (DP)"
-                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                echo "DP is an optimization technique that solves"
-                echo "problems by breaking them into overlapping"
-                echo "subproblems and storing solutions."
-                echo ""
-                echo "Key concepts:"
+                echo "📖 Dynamic Programming"
+                echo "Teknik optimasi: pecah masalah jadi subproblem"
                 echo "- Memoization (top-down)"
                 echo "- Tabulation (bottom-up)"
-                echo "- State transition formula"
                 ;;
             *graph*|*bfs*|*dfs*)
                 echo "📖 Graph Traversal"
-                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                echo "BFS (Breadth-First Search): Level by level"
-                echo "DFS (Depth-First Search): Go deep first"
-                echo ""
-                echo "BFS: Queue-based, shortest path"
-                echo "DFS: Stack-based, cycle detection"
-                ;;
-            *combinatorics*)
-                echo "📖 Combinatorics"
-                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                echo "Counting techniques:"
-                echo "- Permutations: arrangement order matters"
-                echo "- Combinations: selection only"
-                echo "- P(n,r) = n!/(n-r)!"
-                echo "- C(n,r) = n!/r!(n-r)!"
+                echo "BFS: Level by level (Queue)"
+                echo "DFS: Deep first (Stack)"
                 ;;
             *)
-                echo "📖 Topic: $topic"
-                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                echo "Use: openclaw, explain [topic]"
-                echo "Available: DP, Graph, Combinatorics, etc."
+                echo "📚 Gunakan: openclaw, explain [topik]"
                 ;;
         esac
         ;;
@@ -188,9 +167,6 @@ case "$COMMAND" in
         
     *)
         echo "🧠 OSNK Trainer"
-        echo "Usage: openclaw, [command]"
-        echo ""
-        echo "Try: openclaw, help"
-        echo "Or:   openclaw, give me 5 questions"
+        echo "Ketik: openclaw, help"
         ;;
 esac
