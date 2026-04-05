@@ -1,6 +1,6 @@
 ---
 name: osnk-trainer
-version: 1.0.1
+version: 1.0.8
 description: "Pelatih OSNK - Latihan soal olimpiade komputer dengan random questions, speed run, performance tracking, dan mentoring."
 ---
 
